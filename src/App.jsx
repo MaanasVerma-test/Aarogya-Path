@@ -6,14 +6,32 @@ import HowItWorks from './components/HowItWorks'
 import Footer from './components/Footer'
 import Assessment from './components/Assessment'
 import MedicalUpload from './components/MedicalUpload'
+import Dashboard from './components/Dashboard'
 
 function App() {
   const [showAssessment, setShowAssessment] = useState(false)
   const [showUpload, setShowUpload] = useState(false)
+  const [showDashboard, setShowDashboard] = useState(false)
+
+  // Listen for custom events from Dashboard to navigate around
+  React.useEffect(() => {
+    const handleStartAssessment = () => setShowAssessment(true)
+    const handleOpenAnalyzer = () => setShowUpload(true)
+    document.addEventListener('start-assessment', handleStartAssessment)
+    document.addEventListener('open-analyzer', handleOpenAnalyzer)
+    return () => {
+      document.removeEventListener('start-assessment', handleStartAssessment)
+      document.removeEventListener('open-analyzer', handleOpenAnalyzer)
+    }
+  }, [])
 
   return (
     <div className="min-h-screen bg-white font-sans selection:bg-accent selection:text-white">
-      <Navbar onStartAssessment={() => setShowAssessment(true)} onOpenAnalyzer={() => setShowUpload(true)} />
+      <Navbar 
+        onStartAssessment={() => setShowAssessment(true)} 
+        onOpenAnalyzer={() => setShowUpload(true)} 
+        onOpenDashboard={() => setShowDashboard(true)} 
+      />
       
       <main>
         <Hero onStartAssessment={() => setShowAssessment(true)} />
@@ -58,6 +76,11 @@ function App() {
       {/* Full-page Medical Upload Overlay */}
       {showUpload && (
         <MedicalUpload onClose={() => setShowUpload(false)} />
+      )}
+
+      {/* Full-page Dashboard Overlay */}
+      {showDashboard && (
+        <Dashboard onClose={() => setShowDashboard(false)} />
       )}
     </div>
   )

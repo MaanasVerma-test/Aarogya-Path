@@ -5,8 +5,77 @@ import {
   Loader2, ArrowLeft, RefreshCw, Pill, Bone, ClipboardList,
   Clock, ChevronRight, Shield, Type, Plus, Trash2
 } from 'lucide-react'
+import { GoogleGenerativeAI } from '@google/generative-ai'
+import Groq from 'groq-sdk'
 
-const API_BASE = 'http://localhost:3001/api'
+// ── Initialize AI Clients directly in Browser ──
+const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '')
+const groq = new Groq({ 
+  apiKey: import.meta.env.VITE_GROQ_API_KEY || '', 
+  dangerouslyAllowBrowser: true 
+})
+
+const PROMPTS = {
+  xrays: `You are a radiologist AI assistant. The user has uploaded an X-ray image.
+Analyze it carefully and respond in this EXACT JSON format (no markdown, no code fences):
+{
+  "findings": [
+    {
+      "area": "Body area/region",
+      "observation": "What you see",
+      "status": "Normal" | "Abnormal" | "Needs Review",
+      "explanation": "Simple plain-English explanation of what this means"
+    }
+  ],
+  "overallImpression": "A plain-language summary of the X-ray findings.",
+  "urgency": "Routine" | "Follow-up Recommended" | "Urgent - See Doctor",
+  "recommendations": ["recommendation 1", "recommendation 2"]
+}
+Always remind the user this is AI-assisted and they should consult a radiologist.`,
+
+  prescriptions: `You are a pharmacist AI assistant. The user has uploaded a prescription or medication list.
+Extract all medications, check for potential side effects, drug interactions, and provide simple explanations.
+Respond in this EXACT JSON format (no markdown, no code fences):
+{
+  "medications": [
+    {
+      "name": "Drug name",
+      "dosage": "Dosage if visible",
+      "purpose": "What this drug is typically used for",
+      "commonSideEffects": ["side effect 1", "side effect 2"],
+      "warnings": "Any important warnings or contraindications"
+    }
+  ],
+  "interactions": [
+    {
+      "drugs": "Drug A + Drug B",
+      "risk": "Low" | "Moderate" | "High",
+      "description": "What could happen"
+    }
+  ],
+  "overallSummary": "A plain-language summary of the prescription.",
+  "recommendations": ["recommendation 1", "recommendation 2"]
+}
+Always remind the user to consult their prescribing doctor about any concerns.`,
+
+  reports: `You are a medical report analyst. The user has uploaded a medical report or lab result.
+Extract all test values, identify abnormal ones, and explain everything in simple language.
+Respond in this EXACT JSON format (no markdown, no code fences):
+{
+  "extractedValues": [
+    {
+      "testName": "Test Name",
+      "value": "measured value with unit",
+      "normalRange": "normal range",
+      "status": "Normal" | "High" | "Low",
+      "explanation": "Simple explanation (only for abnormal, empty string for normal)"
+    }
+  ],
+  "overallSummary": "A plain-language summary of the report.",
+  "recommendations": ["recommendation 1", "recommendation 2"]
+}
+Always remind the user to consult a real doctor.`
+}
 
 const COMMON_MEDICINES = [
   'Paracetamol', 'Ibuprofen', 'Amoxicillin', 'Atorvastatin', 'Metformin',
@@ -73,7 +142,6 @@ export default function MedicalUpload({ onClose }) {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
-  const [history, setHistory] = useState([])
 
   const medInputRef = useRef(null)
 
@@ -129,7 +197,7 @@ export default function MedicalUpload({ onClose }) {
   }, [])
 
 
-  // ── Submission Handlers ──
+  // ── AI Client-Side Execution ──
   const handleAnalyze = async () => {
     if (!selectedCategory) return
     setLoading(true)
@@ -137,16 +205,51 @@ export default function MedicalUpload({ onClose }) {
     setResult(null)
 
     try {
-      let endpoint = `${API_BASE}/upload/${selectedCategory.id}`
-      let fetchOptions = {}
+      const prompt = PROMPTS[selectedCategory.id]
+      let analysis = null
 
       if (inputMode === 'upload') {
-        if (!file) throw new Error("Please select a file.")
-        const formData = new FormData()
-        formData.append('file', file)
-        fetchOptions = { method: 'POST', body: formData }
+        if (!file || !preview) throw new Error("Please select an image file.")
+        
+        // Extract base64 from data URL (preview)
+        // preview is structured like "data:image/jpeg;base64,...base64data"
+        const [metaData, base64Data] = preview.split(',')
+        const mimeType = metaData.split(':')[1].split(';')[0]
+
+        // Use Gemini Flash Vision for images
+        const models = ['gemini-2.0-flash-lite', 'gemini-2.0-flash']
+        for (const modelName of models) {
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+              const model = genAI.getGenerativeModel({ model: modelName })
+              const aiResult = await model.generateContent([
+                { text: prompt },
+                { inlineData: { mimeType, data: base64Data } }
+              ])
+              const response = await aiResult.response
+              let text = response.text()
+              text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+              analysis = JSON.parse(text)
+              break
+            } catch (err) {
+              if (err instanceof SyntaxError) {
+                 analysis = { overallSummary: err.message, recommendations: ['Consult a healthcare professional.'] }
+                 break
+              }
+              const is429 = err.status === 429 || (err.message && err.message.includes('429'))
+              if (is429 && attempt < 2) {
+                 await new Promise(r => setTimeout(r, 2000)) // Short wait on client
+                 continue
+              }
+              break
+            }
+          }
+          if (analysis) break
+        }
+        if (!analysis) throw new Error("Google Gemini AI rate limit exceeded or connection failed.")
+
       } else {
-        endpoint = `${API_BASE}/analyze/${selectedCategory.id}`
+        // Text mode - Use Groq LLaMA 3
         let textData = ''
         if (selectedCategory.id === 'prescriptions') {
           if (medicines.length === 0) throw new Error("Please add at least one medicine.")
@@ -155,22 +258,37 @@ export default function MedicalUpload({ onClose }) {
           if (!reportText.trim()) throw new Error("Please enter report details.")
           textData = reportText
         }
-        fetchOptions = {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ textData })
-        }
-      }
 
-      const res = await fetch(endpoint, fetchOptions)
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Server error')
+        const textPrompt = `Here is manually entered medical data provided by the user:\n\n---\n${textData}\n---\n\nAnalyze this data exactly as you would a document containing this text. ${prompt}`
+
+        const chatCompletion = await groq.chat.completions.create({
+          messages: [{ role: 'user', content: textPrompt }],
+          model: 'llama-3.3-70b-versatile',
+          temperature: 0.1,
+          response_format: { type: 'json_object' }
+        })
+        
+        const textOut = chatCompletion.choices[0]?.message?.content || '{}'
+        analysis = JSON.parse(textOut)
+      }
       
-      setResult(json.data)
-      // Update history in background
-      fetch(`${API_BASE}/uploads`).then(r => r.json()).then(j => { if(j.success) setHistory(j.data) }).catch(()=>null)
+      const record = {
+        id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(),
+        date: new Date().toISOString(),
+        category: selectedCategory.id,
+        filename: file?.name || (selectedCategory.id === 'prescriptions' ? 'Manual Prescription' : 'Manual Report'),
+        analysis
+      }
+      setResult(record)
+
+      // Persist to Dashboard History
+      try {
+        const history = JSON.parse(localStorage.getItem('aarogya_medical_history') || '[]')
+        localStorage.setItem('aarogya_medical_history', JSON.stringify([record, ...history]))
+      } catch (e) {}
 
     } catch (err) {
+      console.error(err)
       setError(err.message || 'Failed to analyze.')
     } finally {
       setLoading(false)
@@ -348,7 +466,7 @@ export default function MedicalUpload({ onClose }) {
                         <div className={`w-16 h-16 rounded-full ${cat.bgLight} flex items-center justify-center`}><Upload className={`w-8 h-8 ${cat.textColor}`} /></div>
                         <div>
                           <p className="font-bold text-gray-900 text-lg mb-1">Click to upload or drag and drop</p>
-                          <p className="text-sm text-gray-500">Supports JPEG, PNG, WebP, PDF (max 10MB)</p>
+                          <p className="text-sm text-gray-500">Supports JPEG, PNG, WebP (max 10MB)</p>
                         </div>
                       </div>
                     )}

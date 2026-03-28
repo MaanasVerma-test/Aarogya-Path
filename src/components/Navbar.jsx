@@ -1,7 +1,7 @@
 import React from 'react'
-import { HeartPulse } from 'lucide-react'
+import { HeartPulse, LayoutDashboard } from 'lucide-react'
 
-export default function Navbar({ onStartAssessment, onOpenAnalyzer }) {
+export default function Navbar({ onStartAssessment, onOpenAnalyzer, onOpenDashboard }) {
   return (
     <nav className="sticky top-0 z-50 bg-white shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -24,7 +24,13 @@ export default function Navbar({ onStartAssessment, onOpenAnalyzer }) {
           </div>
 
           {/* CTA */}
-          <div className="flex items-center">
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={onOpenDashboard}
+              className="hidden md:flex items-center text-gray-700 hover:text-primary font-medium transition-colors"
+            >
+              <LayoutDashboard className="w-5 h-5 mr-1.5" /> Dashboard
+            </button>
             <button 
               onClick={onStartAssessment}
               className="bg-primary hover:bg-[#1f4a37] text-white px-6 py-2 rounded-full font-medium transition-colors"

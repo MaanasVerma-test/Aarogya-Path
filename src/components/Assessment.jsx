@@ -109,10 +109,22 @@ export default function Assessment({ onClose }) {
     const totalPenalty = Object.values(risks).reduce((a, b) => a + b, 0)
     const overallScore = Math.max(0, 100 - (totalPenalty * 3.5))
 
-    setResults({
+    const finalAssessment = {
       overallScore: Math.round(overallScore),
       diseaseRisks: finalRisks
-    })
+    }
+
+    setResults(finalAssessment)
+    
+    // Persist to Dashboard
+    try {
+      localStorage.setItem('aarogya_assessment', JSON.stringify({
+        date: new Date().toISOString(),
+        data: finalAssessment,
+        answers: formData
+      }))
+    } catch (e) {}
+
     setStep(4)
   }
 
