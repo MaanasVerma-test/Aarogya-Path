@@ -5,12 +5,10 @@ import {
   Loader2, ArrowLeft, RefreshCw, Pill, Bone, ClipboardList,
   Clock, ChevronRight, Shield, Type, Plus, Trash2
 } from 'lucide-react'
-import { GoogleGenerativeAI } from '@google/generative-ai'
 import Groq from 'groq-sdk'
 import { supabase } from '../lib/supabaseClient'
 
 // ── Initialize AI Clients directly in Browser ──
-const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '')
 const groq = new Groq({ 
   apiKey: import.meta.env.VITE_GROQ_API_KEY || '', 
   dangerouslyAllowBrowser: true 
@@ -211,43 +209,70 @@ export default function MedicalUpload({ onClose, session }) {
 
       if (inputMode === 'upload') {
         if (!file || !preview) throw new Error("Please select an image file.")
-        
-        // Extract base64 from data URL (preview)
-        // preview is structured like "data:image/jpeg;base64,...base64data"
-        const [metaData, base64Data] = preview.split(',')
-        const mimeType = metaData.split(':')[1].split(';')[0]
 
-        // Use Gemini Flash Vision for images
-        const models = ['gemini-2.0-flash-lite', 'gemini-2.0-flash']
-        for (const modelName of models) {
-          for (let attempt = 1; attempt <= 2; attempt++) {
-            try {
-              const model = genAI.getGenerativeModel({ model: modelName })
-              const aiResult = await model.generateContent([
-                { text: prompt },
-                { inlineData: { mimeType, data: base64Data } }
-              ])
-              const response = await aiResult.response
-              let text = response.text()
-              text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-              analysis = JSON.parse(text)
-              break
-            } catch (err) {
-              if (err instanceof SyntaxError) {
-                 analysis = { overallSummary: err.message, recommendations: ['Consult a healthcare professional.'] }
-                 break
-              }
-              const is429 = err.status === 429 || (err.message && err.message.includes('429'))
-              if (is429 && attempt < 2) {
-                 await new Promise(r => setTimeout(r, 2000)) // Short wait on client
-                 continue
-              }
-              break
-            }
+        // ── OCR API Flow for Reports & Prescriptions ──
+        if (selectedCategory.id === 'reports' || selectedCategory.id === 'prescriptions') {
+          // Use OCR + Groq for text extraction
+          const formData = new FormData()
+          formData.append('base64Image', preview)
+          formData.append('apikey', import.meta.env.VITE_OCR_API_KEY || 'K81246503888957')
+          formData.append('scale', 'true')
+          formData.append('isTable', 'true') // Optimized for lab reports
+
+          const ocrRes = await fetch('https://api.ocr.space/parse/image', {
+            method: 'POST',
+            body: formData
+          })
+          
+          const ocrData = await ocrRes.json()
+          if (ocrData.IsErroredOnProcessing) {
+             throw new Error(ocrData.ErrorMessage?.[0] || "OCR Parsing Failed")
           }
-          if (analysis) break
+          
+          const extractedText = ocrData.ParsedResults?.[0]?.ParsedText || ''
+          if (!extractedText.trim()) throw new Error("Could not extract any meaningful text from this document image. Ensure it is legible.")
+
+          const textPrompt = `Here is extracted text from a medical document via OCR:\n\n---\n${extractedText}\n---\n\nAnalyze this data exactly as you would a document containing this text. Ensure your response is strictly formatted without markdown blocks.\n${prompt}`
+
+          const chatCompletion = await groq.chat.completions.create({
+            messages: [{ role: 'user', content: textPrompt }],
+            model: 'llama-3.3-70b-versatile',
+            temperature: 0.1,
+            response_format: { type: 'json_object' }
+          })
+          
+          const textOut = chatCompletion.choices[0]?.message?.content || '{}'
+          let cleaned = textOut.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+          analysis = JSON.parse(cleaned)
+
+        } else {
+          // ── Groq Vision API Flow for X-Rays (Replacing Gemini entirely) ──
+          const chatCompletion = await groq.chat.completions.create({
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: prompt },
+                  { type: 'image_url', image_url: { url: preview } }
+                ]
+              }
+            ],
+            // Use Groq's native LLaMA 3.2 90B Vision model
+            model: 'llama-3.2-90b-vision-preview',
+            temperature: 0.1
+          })
+          
+          const textOut = chatCompletion.choices[0]?.message?.content || '{}'
+          
+          // Safety cleanup just in case the model returns markdown code blocks
+          let cleaned = textOut.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+          
+          try {
+             analysis = JSON.parse(cleaned)
+          } catch(e) {
+             throw new Error("Failed to process the structural format of the X-Ray Analysis.")
+          }
         }
-        if (!analysis) throw new Error("Google Gemini AI rate limit exceeded or connection failed.")
 
       } else {
         // Text mode - Use Groq LLaMA 3
