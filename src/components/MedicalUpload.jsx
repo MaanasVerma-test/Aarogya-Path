@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import Groq from 'groq-sdk'
+import { supabase } from '../lib/supabaseClient'
 
 // ── Initialize AI Clients directly in Browser ──
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '')
@@ -123,7 +124,7 @@ const CATEGORIES = [
   }
 ]
 
-export default function MedicalUpload({ onClose }) {
+export default function MedicalUpload({ onClose, session }) {
   const [selectedCategory, setSelectedCategory] = useState(null)
   const [inputMode, setInputMode] = useState('upload') // 'upload' or 'manual'
   
@@ -281,7 +282,22 @@ export default function MedicalUpload({ onClose }) {
       }
       setResult(record)
 
-      // Persist to Dashboard History
+      // Save to Supabase if logged in
+      if (session) {
+         try {
+           const { error: dbError } = await supabase.from('medical_history').insert({
+             user_id: session.user.id,
+             category: selectedCategory.id,
+             filename: record.filename,
+             analysis_result: analysis
+           })
+           if (dbError) console.error("Supabase Save Error:", dbError)
+         } catch (err) {
+           console.error(err)
+         }
+      }
+
+      // Persist to Dashboard History (fallback)
       try {
         const history = JSON.parse(localStorage.getItem('aarogya_medical_history') || '[]')
         localStorage.setItem('aarogya_medical_history', JSON.stringify([record, ...history]))

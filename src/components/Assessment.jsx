@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CheckCircle2, AlertTriangle, Activity, X, Download } from 'lucide-react'
 import { diseases } from './Diseases'
+import { supabase } from '../lib/supabaseClient'
 
 const initialState = {
   age: '',
@@ -21,7 +22,7 @@ const initialState = {
   screenTime: ''
 }
 
-export default function Assessment({ onClose }) {
+export default function Assessment({ onClose, session }) {
   const [step, setStep] = useState(1)
   const [formData, setFormData] = useState(initialState)
   const [results, setResults] = useState(null)
@@ -38,7 +39,7 @@ export default function Assessment({ onClose }) {
     }))
   }
 
-  const calculateResults = () => {
+  const calculateResults = async () => {
     // Basic logic
     let age = parseInt(formData.age) || 30
     let h = parseInt(formData.height) / 100 || 1.7
@@ -116,7 +117,23 @@ export default function Assessment({ onClose }) {
 
     setResults(finalAssessment)
     
-    // Persist to Dashboard
+    // Save to Cloud if logged in
+    if (session) {
+      try {
+        const { error: dbError } = await supabase.from('assessments').insert({
+          user_id: session.user.id,
+          total_score: Math.round(overallScore),
+          risk_level: overallScore > 75 ? 'Low' : overallScore > 50 ? 'Moderate' : 'High',
+          disease_risks: finalRisks,
+          form_data: formData
+        })
+        if (dbError) console.error("Supabase Save Error:", dbError)
+      } catch (err) {
+        console.error(err)
+      }
+    }
+
+    // Persist to local Dashboard (fallback)
     try {
       localStorage.setItem('aarogya_assessment', JSON.stringify({
         date: new Date().toISOString(),

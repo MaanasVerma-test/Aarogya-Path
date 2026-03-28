@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Navbar from './components/Navbar'
 import Hero from './components/Hero'
 import Diseases from './components/Diseases'
@@ -7,11 +7,29 @@ import Footer from './components/Footer'
 import Assessment from './components/Assessment'
 import MedicalUpload from './components/MedicalUpload'
 import Dashboard from './components/Dashboard'
+import Auth from './components/Auth'
+import { supabase } from './lib/supabaseClient'
 
 function App() {
   const [showAssessment, setShowAssessment] = useState(false)
   const [showUpload, setShowUpload] = useState(false)
   const [showDashboard, setShowDashboard] = useState(false)
+  const [showAuth, setShowAuth] = useState(false)
+  const [session, setSession] = useState(null)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+    })
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
 
   // Listen for custom events from Dashboard to navigate around
   React.useEffect(() => {
@@ -28,9 +46,12 @@ function App() {
   return (
     <div className="min-h-screen bg-white font-sans selection:bg-accent selection:text-white">
       <Navbar 
+        session={session}
+        onOpenAuth={() => setShowAuth(true)}
         onStartAssessment={() => setShowAssessment(true)} 
         onOpenAnalyzer={() => setShowUpload(true)} 
-        onOpenDashboard={() => setShowDashboard(true)} 
+        onOpenDashboard={() => session ? setShowDashboard(true) : setShowAuth(true)} 
+        onLogout={async () => await supabase.auth.signOut()}
       />
       
       <main>
@@ -70,17 +91,25 @@ function App() {
 
       {/* Full-page Assessment Overlay */}
       {showAssessment && (
-        <Assessment onClose={() => setShowAssessment(false)} />
+        <Assessment onClose={() => setShowAssessment(false)} session={session} />
       )}
 
       {/* Full-page Medical Upload Overlay */}
       {showUpload && (
-        <MedicalUpload onClose={() => setShowUpload(false)} />
+        <MedicalUpload onClose={() => setShowUpload(false)} session={session} />
       )}
 
-      {/* Full-page Dashboard Overlay */}
-      {showDashboard && (
-        <Dashboard onClose={() => setShowDashboard(false)} />
+      {/* Full-page Dashboard Overlay (Protected) */}
+      {showDashboard && session && (
+        <Dashboard onClose={() => setShowDashboard(false)} session={session} />
+      )}
+
+      {/* Auth Modal */}
+      {showAuth && !session && (
+        <Auth 
+          onClose={() => setShowAuth(false)} 
+          onLoginSuccess={() => setShowAuth(false)} 
+        />
       )}
     </div>
   )

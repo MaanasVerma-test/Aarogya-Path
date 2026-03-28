@@ -12,7 +12,7 @@ export default function Hero({ onStartAssessment }) {
           src="https://my.spline.design/untitled-y3a2yYzNpkGvyUGscjPN1ZC7/"
           frameBorder="0" width="100%" height="100%"
           title="Spline 3D Interactive Medical Model Background"
-          className="w-full h-full object-cover scale-[1.05]"
+          className="w-[calc(100%+100px)] h-[calc(100%+100px)] object-cover scale-[1.05] -translate-x-[50px] -translate-y-[50px]"
         ></iframe> 
         {/* Subtle overlay to ensure text remains readable */}
         <div className="absolute inset-0 bg-white/30 backdrop-blur-[2px] pointer-events-none"></div>

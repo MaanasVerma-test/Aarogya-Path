@@ -1,22 +1,63 @@
 import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, Activity, FileText, CheckCircle2, ChevronRight, Clock, AlertCircle } from 'lucide-react'
+import { supabase } from '../lib/supabaseClient'
 
-export default function Dashboard({ onClose }) {
+export default function Dashboard({ onClose, session }) {
   const [assessmentData, setAssessmentData] = useState(null)
   const [medicalHistory, setMedicalHistory] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    try {
-      const savedAssessment = localStorage.getItem('aarogya_assessment')
-      if (savedAssessment) setAssessmentData(JSON.parse(savedAssessment))
+    async function fetchDashboardData() {
+      if (!session) return
+      setLoading(true)
+      
+      try {
+        // Fetch Assessment
+        const { data: assessData } = await supabase
+          .from('assessments')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+        
+        if (assessData && assessData.length > 0) {
+          setAssessmentData({
+            date: assessData[0].created_at,
+            data: {
+              overallScore: Number(assessData[0].total_score),
+              diseaseRisks: assessData[0].disease_risks
+            }
+          })
+        }
 
-      const savedHistory = localStorage.getItem('aarogya_medical_history')
-      if (savedHistory) setMedicalHistory(JSON.parse(savedHistory))
-    } catch (e) {
-      console.error("Failed to parse local storage", e)
+        // Fetch Medical History
+        const { data: historyData } = await supabase
+          .from('medical_history')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .order('created_at', { ascending: false })
+        
+        if (historyData) {
+          const formattedHistory = historyData.map(h => ({
+            id: h.id,
+            date: h.created_at,
+            category: h.category,
+            filename: h.filename,
+            analysis: h.analysis_result
+          }))
+          setMedicalHistory(formattedHistory)
+        }
+      } catch (err) {
+        console.error("Dashboard fetch error:", err)
+      } finally {
+        setLoading(false)
+      }
     }
-  }, [])
+
+    fetchDashboardData()
+  }, [session])
 
   const formatDate = (dateStr) => {
     return new Date(dateStr).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
