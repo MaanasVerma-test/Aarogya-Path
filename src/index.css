@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-white text-gray-900 font-sans antialiased;
+  }
+}
+
+@layer components {
+  .pill-badge {
+    @apply px-4 py-1.5 rounded-full bg-[#E6F4EA] text-primary font-medium text-sm inline-flex items-center;
+  }
+}
