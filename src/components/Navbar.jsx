@@ -1,7 +1,7 @@
 import React from 'react'
 import { HeartPulse } from 'lucide-react'
 
-export default function Navbar({ onStartAssessment }) {
+export default function Navbar({ onStartAssessment, onOpenAnalyzer }) {
   return (
     <nav className="sticky top-0 z-50 bg-white shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -19,6 +19,7 @@ export default function Navbar({ onStartAssessment }) {
             <a href="#" className="text-gray-600 hover:text-primary transition-colors">Home</a>
             <a href="#diseases" className="text-gray-600 hover:text-primary transition-colors">Diseases</a>
             <a href="#how-it-works" className="text-gray-600 hover:text-primary transition-colors">How It Works</a>
+            <button onClick={onOpenAnalyzer} className="text-gray-600 hover:text-primary transition-colors">Analyze Report</button>
             <a href="#about" className="text-gray-600 hover:text-primary transition-colors">About</a>
           </div>
 

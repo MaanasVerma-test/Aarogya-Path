@@ -25,3 +25,13 @@ dist-ssr
 
 # Brain/Artifacts (since they are in the user's home dir anyway, but just in case)
 brain/
+
+# Environment variables
+.env
+server/.env
+
+# Uploads
+server/uploads/
+
+# Build logs
+build*.log
